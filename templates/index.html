@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>¡Basta! - Juego Multijugador</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at top left, #1a1a2e, #16213e);
+            color: #e94560;
+            min-height: 100vh;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560 0%, #950740 100%);
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(233, 69, 96, 0.3);
+        }
+
+        .input-field {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .input-field:focus {
+            border-color: #e94560;
+            outline: none;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .basta-btn {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            font-size: 1.5rem;
+            font-weight: 800;
+            box-shadow: 0 0 30px rgba(233, 69, 96, 0.5);
+            animation: pulse 2s infinite;
+            transition: all 0.2s ease;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 30px rgba(233, 69, 96, 0.5);
+            }
+
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 50px rgba(233, 69, 96, 0.8);
+            }
+
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 30px rgba(233, 69, 96, 0.5);
+            }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .view-transition {
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+        }
+
+        .view-hidden {
+            opacity: 0;
+            transform: translateY(20px);
+            pointer-events: none;
+            position: absolute;
+            width: 100%;
+        }
+
+        .ready-badge {
+            background: #10b981;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .not-ready-badge {
+            background: #6b7280;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body class="p-4 md:p-8">
+    <div id="app" class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-5xl font-extrabold tracking-tighter mb-2">¡BASTA!<span class="text-white"></span></h1>
+            <p class="text-gray-400">Diversión Multijugador Local</p>
+        </header>
+
+        <!-- Lobby View -->
+        <div id="view-lobby" class="glass p-8 text-center">
+            <div id="join-form">
+                <h2 class="text-2xl font-semibold mb-6 text-white">Únete al Juego</h2>
+                <input type="text" id="player-name" placeholder="Ingresa tu nombre"
+                    class="input-field w-full p-4 rounded-xl mb-4 text-center text-xl" autocomplete="off">
+                <button onclick="joinGame()"
+                    class="btn-primary w-full p-4 rounded-xl text-white font-bold text-xl">ENTRAR AL LOBBY</button>
+            </div>
+            <div id="lobby-list" class="hidden mt-8">
+                <div class="flex flex-col md:flex-row gap-8">
+                    <div class="flex-1">
+                        <h3 class="text-xl font-semibold mb-4 text-white text-left">Jugadores</h3>
+                        <div id="players-container" class="flex flex-col gap-3 mb-8"></div>
+                        <button id="ready-btn" onclick="toggleReady()"
+                            class="w-full p-4 rounded-xl border-2 border-pink-500 text-pink-500 font-bold hover:bg-pink-500 hover:text-white transition mb-4">¡ESTOY
+                            LISTO!</button>
+                    </div>
+                    <div id="settings-panel" class="hidden flex-1 glass p-6 text-left border-pink-500/30">
+                        <h3 class="text-xl font-semibold mb-4 text-white">Ajustes del Host</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-gray-400 text-sm mb-1">Cuenta regresiva (segundos)</label>
+                                <input type="number" id="setting-countdown" value="10"
+                                    class="input-field w-full p-2 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-gray-400 text-sm mb-1">Categorías (separadas por coma)</label>
+                                <textarea id="setting-categories"
+                                    class="input-field w-full p-2 rounded-lg h-24"></textarea>
+                            </div>
+                            <button onclick="saveSettings()"
+                                class="btn-primary w-full p-2 rounded-lg text-white font-bold text-sm">GUARDAR
+                                AJUSTES</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="host-controls" class="hidden mt-8">
+                    <button id="start-round-btn" onclick="startRound()"
+                        class="btn-primary px-8 py-4 rounded-xl text-white font-bold text-xl opacity-50 cursor-not-allowed"
+                        disabled>INICIAR RONDA</button>
+                    <p id="ready-warning" class="text-red-400 text-sm mt-2">Esperando a que todos estén listos...</p>
+                </div>
+                <p id="wait-msg" class="text-gray-400 italic mt-8">Esperando a que el host inicie...</p>
+                <div id="qr-container" class="mt-8 flex flex-col items-center gap-4">
+                    <p class="text-gray-400 text-sm">Escanea para unirte:</p>
+                    <div id="qrcode" class="p-4 bg-white rounded-xl"></div>
+                    <p id="server-url-display" class="text-pink-500 font-bold text-sm"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game View -->
+        <div id="view-playing" class="hidden glass p-6">
+            <div class="flex justify-between items-center mb-6">
+                <div class="text-3xl font-bold text-white">Letra: <span id="display-letter"
+                        class="text-6xl text-pink-500 ml-2">?</span></div>
+                <div id="countdown" class="text-4xl font-black text-red-500 hidden">10</div>
+            </div>
+            <div id="categories-inputs" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <!-- Inputs generated via JS -->
+            </div>
+            <div class="flex justify-center">
+                <button id="basta-trigger" onclick="triggerBasta()"
+                    class="basta-btn btn-primary text-white">¡BASTA!</button>
+            </div>
+        </div>
+
+        <!-- Review View -->
+        <div id="view-review" class="hidden glass p-6 overflow-x-auto">
+            <h2 class="text-2xl font-bold mb-6 text-white text-center">Fase de Calificación</h2>
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="text-gray-400 border-b border-gray-700">
+                        <th class="p-3">Jugador</th>
+                        <th class="p-3">Categoría</th>
+                        <th class="p-3">Palabra</th>
+                        <th class="p-3">Pts</th>
+                        <th class="p-3">Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="review-table-body" class="text-white">
+                    <!-- Rows generated via JS -->
+                </tbody>
+            </table>
+            <div id="review-host-controls" class="hidden mt-8 text-center">
+                <button onclick="confirmRound()" class="btn-primary px-8 py-4 rounded-xl text-white font-bold">CONFIRMAR
+                    PUNTAJES</button>
+            </div>
+        </div>
+
+        <!-- Scores View -->
+        <div id="view-scores" class="hidden glass p-8 text-center">
+            <h2 class="text-3xl font-bold mb-8 text-white">Tabla de Posiciones</h2>
+            <div id="leaderboard-container" class="space-y-4 mb-8">
+                <!-- Scores generated via JS -->
+            </div>
+            <div id="scores-host-controls" class="hidden">
+                <button onclick="nextRoundLobby()"
+                    class="btn-primary px-8 py-4 rounded-xl text-white font-bold">SIGUIENTE RONDA</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let mySid = null;
+        let gameState = {};
+        let qrGenerated = false;
+
+        // Sound Effects
+        const sounds = {
+            start: new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'),
+            basta: new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'),
+            tick: new Audio('https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3'),
+            end: new Audio('https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3')
+        };
+
+        // Set BASTA sound to maximum volume
+        sounds.basta.volume = 1.0;
+        sounds.start.volume = 0.7;
+        sounds.tick.volume = 0.8;
+        sounds.end.volume = 0.9;
+
+        function playSound(name, volume = null) {
+            if (sounds[name]) {
+                sounds[name].currentTime = 0;
+                if (volume !== null) sounds[name].volume = volume;
+                sounds[name].play().catch(e => console.log("Sound play blocked"));
+            }
+        }
+
+        // Text-to-speech for BASTA (works on all devices)
+        function speakBasta() {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance('¡BASTA!');
+                utterance.lang = 'es-MX';
+                utterance.volume = 1.0;
+                utterance.rate = 0.9;
+                utterance.pitch = 1.2;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        socket.on('connect', () => {
+            mySid = socket.id;
+            console.log("Connected with SID:", mySid);
+        });
+
+        function joinGame() {
+            const name = document.getElementById('player-name').value;
+            if (!name) return alert("Por favor ingresa un nombre");
+            socket.emit('join_game', { name: name });
+            document.getElementById('join-form').classList.add('hidden');
+            document.getElementById('lobby-list').classList.remove('hidden');
+        }
+
+        function startRound() {
+            socket.emit('start_round');
+        }
+
+        function triggerBasta() {
+            if (document.getElementById('basta-trigger').disabled) return;
+            // Sound is now played via server broadcast so everyone hears it
+            const btn = document.getElementById('basta-trigger');
+            btn.disabled = true;
+            btn.classList.add('scale-90', 'opacity-50');
+            socket.emit('basta_triggered');
+        }
+
+        // Listen for server broadcast to play BASTA sound on ALL clients
+        socket.on('play_basta_sound', (data) => {
+            console.log(`BASTA triggered by ${data.triggered_by}!`);
+            playSound('basta', 1.0);
+            speakBasta(); // Also speak "BASTA!" out loud
+        });
+
+        function confirmRound() {
+            socket.emit('confirm_round');
+        }
+
+        function nextRoundLobby() {
+            socket.emit('next_round_lobby');
+        }
+
+        function toggleInvalidate(sid, category) {
+            socket.emit('toggle_invalidation', { sid: sid, category: category });
+        }
+
+        function toggleReady() {
+            socket.emit('toggle_ready');
+        }
+
+        function saveSettings() {
+            const countdown = document.getElementById('setting-countdown').value;
+            const cats = document.getElementById('setting-categories').value.split(',').map(s => s.trim()).filter(s => s);
+            socket.emit('update_settings', {
+                countdown_time: countdown,
+                categories: cats
+            });
+        }
+
+        socket.on('state_update', (state) => {
+            console.log("State Update:", state);
+            gameState = state;
+            updateUI();
+        });
+
+        socket.on('basta_countdown', (data) => {
+            console.log("Basta Countdown:", data);
+            const cd = document.getElementById('countdown');
+            cd.classList.remove('hidden');
+
+            // Disable button for everyone
+            const btn = document.getElementById('basta-trigger');
+            btn.disabled = true;
+            btn.classList.add('scale-90', 'opacity-50');
+
+            let timeLeft = data.seconds;
+            cd.innerText = timeLeft;
+            const interval = setInterval(() => {
+                timeLeft--;
+                cd.innerText = timeLeft;
+                if (timeLeft > 0 && timeLeft <= 3) playSound('tick');
+                if (timeLeft <= 0) {
+                    clearInterval(interval);
+                    playSound('end');
+                }
+            }, 1000);
+        });
+
+        socket.on('stop_writing', () => {
+            console.log("Stop Writing");
+            const inputs = document.querySelectorAll('.category-input');
+            const answers = {};
+            inputs.forEach(input => {
+                answers[input.dataset.category] = input.value;
+                input.disabled = true;
+            });
+            socket.emit('submit_answers', { answers: answers });
+            document.getElementById('basta-trigger').disabled = true;
+            document.getElementById('basta-trigger').style.opacity = '0.5';
+        });
+
+        function updateUI() {
+            const views = ['view-lobby', 'view-playing', 'view-review', 'view-scores'];
+
+            // Handle view transitions
+            views.forEach(v => {
+                const el = document.getElementById(v);
+                if (gameState.game_state === v.replace('view-', '').toUpperCase()) {
+                    el.classList.remove('hidden');
+                    setTimeout(() => el.classList.remove('view-hidden'), 10);
+                } else {
+                    el.classList.add('view-hidden');
+                    setTimeout(() => {
+                        if (el.classList.contains('view-hidden')) el.classList.add('hidden');
+                    }, 500);
+                }
+            });
+
+            const isHost = (mySid === gameState.current_host_sid);
+
+            if (gameState.game_state === 'LOBBY') {
+                const container = document.getElementById('players-container');
+                container.innerHTML = '';
+                let allReady = true;
+
+                gameState.player_order.forEach(sid => {
+                    const p = gameState.players[sid];
+                    if (!p.ready) allReady = false;
+
+                    const div = document.createElement('div');
+                    div.className = `flex justify-between items-center p-3 rounded-xl glass border ${sid === gameState.current_host_sid ? 'border-pink-500' : 'border-gray-700'} text-white`;
+                    div.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <span>${p.name} ${sid === gameState.current_host_sid ? '👑' : ''}</span>
+                            ${sid === mySid ? '<span class="text-xs text-pink-400 font-bold">(TÚ)</span>' : ''}
+                        </div>
+                        <span class="${p.ready ? 'ready-badge' : 'not-ready-badge'}">${p.ready ? 'LISTO' : 'ESPERANDO'}</span>
+                    `;
+                    container.appendChild(div);
+                });
+
+                const readyBtn = document.getElementById('ready-btn');
+                if (gameState.players[mySid]?.ready) {
+                    readyBtn.innerText = 'NO ESTOY LISTO';
+                    readyBtn.classList.add('bg-pink-500', 'text-white');
+                } else {
+                    readyBtn.innerText = '¡ESTOY LISTO!';
+                    readyBtn.classList.remove('bg-pink-500', 'text-white');
+                }
+
+                if (isHost) {
+                    document.getElementById('host-controls').classList.remove('hidden');
+                    document.getElementById('settings-panel').classList.remove('hidden');
+                    document.getElementById('wait-msg').classList.add('hidden');
+
+                    const startBtn = document.getElementById('start-round-btn');
+                    const readyWarning = document.getElementById('ready-warning');
+
+                    if (allReady && gameState.player_order.length > 0) {
+                        startBtn.disabled = false;
+                        startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        readyWarning.classList.add('hidden');
+                    } else {
+                        startBtn.disabled = true;
+                        startBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                        readyWarning.classList.remove('hidden');
+                    }
+
+                    // Fill settings if empty
+                    if (document.getElementById('setting-categories').value === '') {
+                        document.getElementById('setting-categories').value = gameState.settings.categories.join(', ');
+                        document.getElementById('setting-countdown').value = gameState.settings.countdown_time;
+                    }
+                } else {
+                    document.getElementById('host-controls').classList.add('hidden');
+                    document.getElementById('settings-panel').classList.add('hidden');
+                    document.getElementById('wait-msg').classList.remove('hidden');
+                }
+
+                // Generate QR Code
+                if (gameState.server_url && !qrGenerated) {
+                    const qrEl = document.getElementById('qrcode');
+                    qrEl.innerHTML = '';
+                    new QRCode(qrEl, {
+                        text: gameState.server_url,
+                        width: 128,
+                        height: 128,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.H
+                    });
+                    document.getElementById('server-url-display').innerText = gameState.server_url;
+                    qrGenerated = true;
+                }
+            }
+            else if (gameState.game_state === 'PLAYING') {
+                if (document.getElementById('display-letter').innerText === '?') {
+                    playSound('start');
+                }
+                document.getElementById('display-letter').innerText = gameState.current_letter;
+                const container = document.getElementById('categories-inputs');
+                if (container.children.length === 0) {
+                    gameState.categories.forEach(cat => {
+                        const div = document.createElement('div');
+                        div.innerHTML = `
+                            <label class="block text-gray-400 text-sm mb-1">${cat}</label>
+                            <input type="text" data-category="${cat}" class="category-input input-field w-full p-3 rounded-xl" autocomplete="off">
+                        `;
+                        container.appendChild(div);
+                    });
+                }
+                // Ensure button is enabled for the new round
+                const bastaBtn = document.getElementById('basta-trigger');
+                bastaBtn.disabled = false;
+                bastaBtn.style.opacity = '1';
+                bastaBtn.classList.remove('scale-90', 'opacity-50');
+                document.getElementById('countdown').classList.add('hidden');
+            }
+            else if (gameState.game_state === 'REVIEW') {
+                document.getElementById('view-review').classList.remove('hidden');
+                const tbody = document.getElementById('review-table-body');
+                tbody.innerHTML = '';
+
+                // Clear inputs for next round
+                document.getElementById('categories-inputs').innerHTML = '';
+                document.getElementById('display-letter').innerText = '?';
+
+                gameState.categories.forEach(cat => {
+                    gameState.player_order.forEach(sid => {
+                        const p = gameState.players[sid];
+                        const word = p.answers[cat] || '';
+                        const score = p.provisional_scores[cat] || 0;
+                        const isInvalid = p.invalidated[cat];
+                        const startsWithLetter = word.toLowerCase().startsWith(gameState.current_letter.toLowerCase());
+
+                        const tr = document.createElement('tr');
+                        tr.className = "border-b border-gray-800 hover:bg-white/5 transition";
+                        tr.innerHTML = `
+                            <td class="p-3">
+                                <div class="font-semibold text-white">${p.name}</div>
+                                ${sid === mySid ? '<div class="text-[10px] text-pink-500 font-bold uppercase">Tú</div>' : ''}
+                            </td>
+                            <td class="p-3 text-gray-400 text-sm">${cat}</td>
+                            <td class="p-3">
+                                <div class="${isInvalid ? 'line-through text-red-500 opacity-50' : (word && startsWithLetter ? 'text-white' : 'text-red-400')} font-medium">
+                                    ${word || '<span class="italic opacity-50">Sin respuesta</span>'}
+                                </div>
+                                ${word && !startsWithLetter ? '<div class="text-[10px] text-red-500 uppercase font-bold">Letra Incorrecta</div>' : ''}
+                            </td>
+                            <td class="p-3">
+                                <div class="font-black text-xl ${isInvalid ? 'text-gray-600' : (score === 100 ? 'text-yellow-400' : score === 50 ? 'text-green-400' : 'text-red-500')}">
+                                    ${isInvalid ? 0 : score}
+                                </div>
+                            </td>
+                            <td class="p-3">
+                                ${isHost ? `
+                                    <button onclick="toggleInvalidate('${sid}', '${cat}')" class="group relative flex items-center justify-center w-10 h-10 rounded-full border border-red-500/30 hover:bg-red-500 transition-all">
+                                        <span class="text-red-500 group-hover:text-white">${isInvalid ? '↺' : '✕'}</span>
+                                        <span class="absolute -top-8 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">${isInvalid ? 'Restaurar' : 'Invalidar'}</span>
+                                    </button>
+                                ` : ''}
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+
+                if (isHost) {
+                    document.getElementById('review-host-controls').classList.remove('hidden');
+                } else {
+                    document.getElementById('review-host-controls').classList.add('hidden');
+                }
+            }
+            else if (gameState.game_state === 'SCORES') {
+                document.getElementById('view-scores').classList.remove('hidden');
+                const container = document.getElementById('leaderboard-container');
+                container.innerHTML = '';
+
+                const sortedPlayers = [...gameState.player_order].sort((a, b) => gameState.players[b].score - gameState.players[a].score);
+
+                sortedPlayers.forEach((sid, index) => {
+                    const p = gameState.players[sid];
+                    const div = document.createElement('div');
+                    div.className = `flex justify-between items-center p-4 glass ${index === 0 ? 'border-yellow-500' : 'border-gray-700'}`;
+                    div.innerHTML = `
+                        <div class="flex items-center">
+                            <span class="text-2xl mr-4">${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : (index + 1)}</span>
+                            <span class="text-xl font-bold text-white">${p.name}</span>
+                        </div>
+                        <span class="text-2xl font-black text-pink-500">${p.score} pts</span>
+                    `;
+                    container.appendChild(div);
+                });
+
+                if (isHost) {
+                    document.getElementById('scores-host-controls').classList.remove('hidden');
+                } else {
+                    document.getElementById('scores-host-controls').classList.add('hidden');
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

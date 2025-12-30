@@ -1,7 +1,5 @@
 import random
 import string
-import threading
-import time
 import socket
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
